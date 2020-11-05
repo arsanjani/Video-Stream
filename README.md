@@ -7,7 +7,6 @@ Fast HTTP Media Streaming Web API in ASP.NET MVC | C#
 - Compatible with almost every Video Player
 - Used SQL Server FileStream as back end source
 - Fast & efficient implemention
-- 
 
 # How to use
 1. Edit ConnectionStrings in [web.config](src/web.config) file
