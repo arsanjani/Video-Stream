@@ -1,4 +1,4 @@
-# Video Streaming Via HTTP 
+# Video Streaming Web API
 Fast HTTP Media Streaming Web API in ASP.NET MVC | C#    
 
 # Feautures
