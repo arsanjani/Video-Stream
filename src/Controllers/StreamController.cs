@@ -1,29 +1,19 @@
-﻿using md.akharinkhabar.ir.Models;
-using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Net.Mime;
-using System.Runtime.Caching;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Web;
-using System.Web.Hosting;
-using System.Web.Http;
+using System.Collections.ObjectModel;
+using VideoStream.Services;
 
-namespace md.akharinkhabar.ir.Controllers
+namespace VideoStream.Controllers
 {
-    public class StreamController : ApiController
+    [ApiController]
+    [Route("api/[controller]")]
+    public class StreamController : ControllerBase
     {
+        private readonly IMediaStreamService _mediaStreamService;
+        private readonly ILogger<StreamController> _logger;
+        
         // We have a read-only dictionary for mapping file extensions and MIME names. 
         public static readonly IReadOnlyDictionary<string, string> MimeNames;
-        private static ObjectCache cache = MemoryCache.Default;
-        #region Constructors
 
         static StreamController()
         {
@@ -39,109 +29,93 @@ namespace md.akharinkhabar.ir.Controllers
             };
 
             MimeNames = new ReadOnlyDictionary<string, string>(mimeNames);
-
         }
 
-        #endregion
+        public StreamController(IMediaStreamService mediaStreamService, ILogger<StreamController> logger)
+        {
+            _mediaStreamService = mediaStreamService ?? throw new ArgumentNullException(nameof(mediaStreamService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
 
-        #region Actions
-        public HttpResponseMessage Get(string newsid, CancellationToken cancellationToken)
+        [HttpGet("{newsid}")]
+        [HttpHead("{newsid}")]
+        public async Task<IActionResult> Get(string newsid, CancellationToken cancellationToken)
         {
             try
             {
-                if (newsid != null && long.TryParse(newsid, out long n))
+                if (!_mediaStreamService.IsValidNewsId(newsid))
                 {
-                    MediaStream streamline;
-                    if (cache.Contains("MediaStream-" + newsid))
-                        streamline = (MediaStream)cache.Get("MediaStream-" + newsid);
-                    else
-                    {
-                        streamline = new MediaStream(newsid);
-                        cache.Set("MediaStream-" + newsid, streamline, DateTime.Now.AddSeconds(30.0));
-                    }
-                    if (streamline.FileSize == 0)
-                        throw new HttpResponseException(HttpStatusCode.NotFound);
-
-                    RangeHeaderValue rangeHeader = Request.Headers.Range;
-                    HttpResponseMessage response = new HttpResponseMessage();
-
-                    response.Headers.AcceptRanges.Add("bytes");
-
-                    // The request will be treated as normal request if there is no Range header.
-                    if (rangeHeader == null || !rangeHeader.Ranges.Any())
-                    {
-                        response.StatusCode = HttpStatusCode.OK;
-                        response.Content = new PushStreamContent(async (outputStream, httpContent, transpContext)
-                        =>
-                        {
-                            using (outputStream)
-                                await streamline.CreatePartialContent(outputStream, 0, streamline.FileSize, newsid);
-                        }
-                        , GetMimeNameFromExt(streamline.FileExt));
-
-                        response.Content.Headers.ContentLength = streamline.FileSize;
-                        response.Content.Headers.ContentType = GetMimeNameFromExt(streamline.FileExt);
-
-                        return response;
-                    }
-                    long start = 0, end = 0;
-                    // 1. If the unit is not 'bytes'.
-                    // 2. If there are multiple ranges in header value.
-                    // 3. If start or end position is greater than file length.
-                    if (rangeHeader.Unit != "bytes" || rangeHeader.Ranges.Count > 1 ||
-                        !TryReadRangeItem(rangeHeader.Ranges.First(), streamline.FileSize, out start, out end))
-                    {
-                        response.StatusCode = HttpStatusCode.RequestedRangeNotSatisfiable;
-                        response.Content = new StreamContent(Stream.Null);  // No content for this status.
-                        response.Content.Headers.ContentRange = new ContentRangeHeaderValue(streamline.FileSize);
-                        response.Content.Headers.ContentType = GetMimeNameFromExt(streamline.FileExt);
-
-                        return response;
-                    }
-
-                    var contentRange = new ContentRangeHeaderValue(start, end, streamline.FileSize);
-
-                    // We are now ready to produce partial content.
-                    response.StatusCode = HttpStatusCode.PartialContent;
-
-                    response.Content = new PushStreamContent(async (outputStream, httpContent, transpContext)
-                    =>
-                    {
-                        using (outputStream) // Copy the file to output stream in indicated range.
-                            await streamline.CreatePartialContent(outputStream, start, end, newsid);
-
-                    }, GetMimeNameFromExt(streamline.FileExt));
-                    response.Content.Headers.ContentRange = contentRange;
-
-                    return response;
-
-
+                    return NotFound();
                 }
-                else
+
+                var mediaInfo = await _mediaStreamService.GetMediaStreamInfoAsync(newsid);
+                if (mediaInfo == null || mediaInfo.FileSize == 0)
                 {
-                    throw new HttpResponseException(HttpStatusCode.NotFound);
+                    return NotFound();
                 }
+
+                var rangeHeader = Request.GetTypedHeaders().Range;
+                
+                // Set accept ranges header
+                Response.Headers.AcceptRanges = "bytes";
+
+                // The request will be treated as normal request if there is no Range header.
+                if (rangeHeader == null || !rangeHeader.Ranges.Any())
+                {
+                    var fullContentStream = await _mediaStreamService.CreatePartialContentAsync(newsid, 0, mediaInfo.FileSize - 1);
+                    return File(fullContentStream, GetMimeNameFromExt(mediaInfo.FileExt), enableRangeProcessing: true);
+                }
+
+                long start = 0, end = 0;
+                // 1. If the unit is not 'bytes'.
+                // 2. If there are multiple ranges in header value.
+                // 3. If start or end position is greater than file length.
+                if (rangeHeader.Unit != "bytes" || rangeHeader.Ranges.Count > 1 ||
+                    !TryReadRangeItem(rangeHeader.Ranges.First(), mediaInfo.FileSize, out start, out end))
+                {
+                    Response.Headers.ContentRange = $"bytes */{mediaInfo.FileSize}";
+                    return StatusCode(416); // Range Not Satisfiable
+                }
+
+                // Create partial content stream
+                var partialContentStream = await _mediaStreamService.CreatePartialContentAsync(newsid, start, end);
+                
+                // Set content range header
+                Response.Headers.ContentRange = $"bytes {start}-{end}/{mediaInfo.FileSize}";
+                
+                // Return 206 Partial Content
+                Response.StatusCode = 206;
+                return new FileStreamResult(partialContentStream, GetMimeNameFromExt(mediaInfo.FileExt))
+                {
+                    EnableRangeProcessing = false
+                };
             }
             catch (Exception ex)
             {
-                
-                throw ex;
+                _logger.LogError(ex, "Error streaming media for newsId {NewsId}", newsid);
+                return StatusCode(500, "Internal server error");
             }
-        } 
-        #endregion
-
-        #region Others
-        private static MediaTypeHeaderValue GetMimeNameFromExt(string ext)
-        {
-            string value;
-
-            if (MimeNames.TryGetValue(ext.ToLowerInvariant(), out value))
-                return new MediaTypeHeaderValue(value);
-            else
-                return new MediaTypeHeaderValue(MediaTypeNames.Application.Octet);
         }
 
-        private static  bool TryReadRangeItem(RangeItemHeaderValue range, long contentLength,
+        [HttpOptions("{newsid}")]
+        public IActionResult Options(string newsid)
+        {
+            Response.Headers["Allow"] = "GET, HEAD, OPTIONS";
+            Response.Headers["Access-Control-Allow-Origin"] = "*";
+            Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS";
+            Response.Headers["Access-Control-Allow-Headers"] = "Range, Content-Type";
+            return Ok();
+        }
+
+        private static string GetMimeNameFromExt(string ext)
+        {
+            if (MimeNames.TryGetValue(ext.ToLowerInvariant(), out string? value))
+                return value;
+            else
+                return MediaTypeNames.Application.Octet;
+        }
+
+        private static bool TryReadRangeItem(Microsoft.Net.Http.Headers.RangeItemHeaderValue range, long contentLength,
            out long start, out long end)
         {
             if (range.From != null)
@@ -160,8 +134,8 @@ namespace md.akharinkhabar.ir.Controllers
                 else
                     start = 0;
             }
-            return (start < contentLength && end < contentLength);
+            
+            return (start >= 0 && start < contentLength && end >= start && end <= contentLength - 1);
         }
-        #endregion
     }
 }

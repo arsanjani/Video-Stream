@@ -5,6 +5,8 @@ VisualStudioVersion = 15.0.28307.1145
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VideoStream", "src\VideoStream.csproj", "{228A03E1-3C06-4603-8576-DB4DF833374A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VideoStream.Tests", "VideoStream.Tests\VideoStream.Tests.csproj", "{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,14 @@ Global
 		{228A03E1-3C06-4603-8576-DB4DF833374A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{228A03E1-3C06-4603-8576-DB4DF833374A}.Release|x64.ActiveCfg = Release|x64
 		{228A03E1-3C06-4603-8576-DB4DF833374A}.Release|x64.Build.0 = Release|x64
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Debug|x64.ActiveCfg = Debug|x64
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Debug|x64.Build.0 = Debug|x64
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Release|x64.ActiveCfg = Release|x64
+		{E8D0B3A5-9B0C-4F2A-8D2E-1F2B3C4D5E6F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
