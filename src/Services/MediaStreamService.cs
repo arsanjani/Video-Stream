@@ -5,6 +5,7 @@ using System.Transactions;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using VideoStream.Models;
 
 namespace VideoStream.Services;
@@ -51,28 +52,41 @@ public class MediaStreamService : IMediaStreamService
             return false;
         }
 
-        // Disallow any characters invalid for Windows file names
-        // (these include: < > : " / \\ | ? * and control characters)
-        var invalidChars = Path.GetInvalidFileNameChars();
-        if (id.IndexOfAny(invalidChars) >= 0)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return false;
+            // Windows: disallow runtime invalid filename chars plus control chars
+            var runtimeInvalid = Path.GetInvalidFileNameChars();
+            var controlChars = Enumerable.Range(0, 32).Select(i => (char)i);
+            var invalidChars = runtimeInvalid.Concat(controlChars).Distinct().ToArray();
+            if (id.IndexOfAny(invalidChars) >= 0)
+            {
+                return false;
+            }
+
+            // File names cannot end with a dot on Windows
+            if (id.EndsWith('.'))
+                return false;
+
+            // Reserved device names (CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9)
+            // are not allowed even with extensions (e.g. "CON.txt")
+            var reservedNames = new[] { "CON", "PRN", "AUX", "NUL" }
+                .Concat(Enumerable.Range(1, 9).Select(i => "COM" + i))
+                .Concat(Enumerable.Range(1, 9).Select(i => "LPT" + i))
+                .ToArray();
+
+            var firstPart = id.Split('.').FirstOrDefault()?.ToUpperInvariant() ?? string.Empty;
+            if (reservedNames.Contains(firstPart))
+                return false;
         }
-
-        // File names cannot end with a dot on Windows
-        if (id.EndsWith('.'))
-            return false;
-
-        // Reserved device names (CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9)
-        // are not allowed even with extensions (e.g. "CON.txt")
-        var reservedNames = new[] { "CON", "PRN", "AUX", "NUL" }
-            .Concat(Enumerable.Range(1, 9).Select(i => "COM" + i))
-            .Concat(Enumerable.Range(1, 9).Select(i => "LPT" + i))
-            .ToArray();
-
-        var firstPart = id.Split('.').FirstOrDefault()?.ToUpperInvariant() ?? string.Empty;
-        if (reservedNames.Contains(firstPart))
-            return false;
+        else
+        {
+            // Linux/Unix: only slash '/' and NUL/control characters are invalid in filenames
+            var invalidChars = new[] { '/' }.Concat(Enumerable.Range(0, 32).Select(i => (char)i)).Distinct().ToArray();
+            if (id.IndexOfAny(invalidChars) >= 0)
+            {
+                return false;
+            }
+        }
 
         return true;
     }

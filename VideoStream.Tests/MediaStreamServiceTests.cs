@@ -8,6 +8,9 @@ using VideoStream.Services;
 using VideoStream.Models;
 using System.Data.Common;
 using System.Data;
+using System.Runtime.InteropServices;
+using System.IO;
+using System.Linq;
 
 namespace VideoStream.Tests;
 
@@ -274,8 +277,44 @@ public class MediaStreamServiceTests
         result.Should().BeFalse();
     }
 
+    private bool PlatformExpectedIsValid(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return false;
+        if (id != id.Trim())
+            return false;
+        if (id.Length > 50)
+            return false;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var runtimeInvalid = Path.GetInvalidFileNameChars();
+            var controlChars = Enumerable.Range(0, 32).Select(i => (char)i);
+            var invalidChars = runtimeInvalid.Concat(controlChars).Distinct().ToArray();
+            if (id.IndexOfAny(invalidChars) >= 0)
+                return false;
+            if (id.EndsWith('.'))
+                return false;
+            var reservedNames = new[] { "CON", "PRN", "AUX", "NUL" }
+                .Concat(Enumerable.Range(1, 9).Select(i => "COM" + i))
+                .Concat(Enumerable.Range(1, 9).Select(i => "LPT" + i))
+                .ToArray();
+            var firstPart = id.Split('.').FirstOrDefault()?.ToUpperInvariant() ?? string.Empty;
+            if (reservedNames.Contains(firstPart))
+                return false;
+        }
+        else
+        {
+            var invalidChars = new[] { '/' }.Concat(Enumerable.Range(0, 32).Select(i => (char)i)).Distinct().ToArray();
+            if (id.IndexOfAny(invalidChars) >= 0)
+                return false;
+        }
+
+        return true;
+    }
+
     [Theory]
-    // Characters invalid for Windows file names must be rejected
+    // These IDs include characters that may be valid or invalid depending on platform.
     [InlineData("id*asterisk")]
     [InlineData("id?question")]
     [InlineData("id|pipe")]
@@ -285,17 +324,6 @@ public class MediaStreamServiceTests
     [InlineData("id:colon")]
     [InlineData("id\\backslash")]
     [InlineData("id/slash")]
-    public void IsValidId_WithInvalidWindowsChars_ReturnsFalse(string idWithSpecialChars)
-    {
-        // Act
-        var result = _mediaStreamService.IsValidId(idWithSpecialChars);
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Theory]
-    // These special characters are allowed in Windows file names and should be accepted
     [InlineData("123!@#")]
     [InlineData("id@domain.com")]
     [InlineData("id.extension")]
@@ -307,13 +335,21 @@ public class MediaStreamServiceTests
     [InlineData("id[bracket]")]
     [InlineData("id{brace}")]
     [InlineData("id;semicolon")]
-    public void IsValidId_WithAllowedSpecialCharacters_ReturnsTrue(string idWithSpecialChars)
+    [InlineData("1 2 3")]
+    [InlineData("id with spaces")]
+    [InlineData("CON")]
+    [InlineData("con.txt")]
+    [InlineData("LPT1")]
+    [InlineData("nul")]
+    [InlineData("name.")]
+    public void IsValidId_SpecialCharacters_MatchPlatformRules(string id)
     {
         // Act
-        var result = _mediaStreamService.IsValidId(idWithSpecialChars);
+        var result = _mediaStreamService.IsValidId(id);
 
         // Assert
-        result.Should().BeTrue();
+        var expected = PlatformExpectedIsValid(id);
+        result.Should().Be(expected);
     }
 
     [Theory]
