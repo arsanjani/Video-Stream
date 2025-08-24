@@ -37,18 +37,18 @@ namespace VideoStream.Controllers
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        [HttpGet("{newsid}")]
-        [HttpHead("{newsid}")]
-        public async Task<IActionResult> Get(string newsid, CancellationToken cancellationToken)
+        [HttpGet("{id}")]
+        [HttpHead("{id}")]
+        public async Task<IActionResult> Get(string id, CancellationToken cancellationToken)
         {
             try
             {
-                if (!_mediaStreamService.IsValidNewsId(newsid))
+                if (!_mediaStreamService.IsValidId(id))
                 {
                     return NotFound();
                 }
 
-                var mediaInfo = await _mediaStreamService.GetMediaStreamInfoAsync(newsid);
+                var mediaInfo = await _mediaStreamService.GetMediaStreamInfoAsync(id);
                 if (mediaInfo == null || mediaInfo.FileSize == 0)
                 {
                     return NotFound();
@@ -62,7 +62,7 @@ namespace VideoStream.Controllers
                 // The request will be treated as normal request if there is no Range header.
                 if (rangeHeader == null || !rangeHeader.Ranges.Any())
                 {
-                    var fullContentStream = await _mediaStreamService.CreatePartialContentAsync(newsid, 0, mediaInfo.FileSize - 1);
+                    var fullContentStream = await _mediaStreamService.CreatePartialContentAsync(id, 0, mediaInfo.FileSize - 1);
                     return File(fullContentStream, GetMimeNameFromExt(mediaInfo.FileExt), enableRangeProcessing: true);
                 }
 
@@ -78,11 +78,14 @@ namespace VideoStream.Controllers
                 }
 
                 // Create partial content stream
-                var partialContentStream = await _mediaStreamService.CreatePartialContentAsync(newsid, start, end);
-                
-                // Set content range header
-                Response.Headers.ContentRange = $"bytes {start}-{end}/{mediaInfo.FileSize}";
-                
+                var partialContentStream = await _mediaStreamService.CreatePartialContentAsync(id, start, end);
+
+                // Set content range and length headers for HTTP/2 correctness
+                var contentLength = partialContentStream.CanSeek ? partialContentStream.Length : (end - start + 1);
+                var servedEnd = start + contentLength - 1;
+                Response.Headers.ContentRange = $"bytes {start}-{servedEnd}/{mediaInfo.FileSize}";
+                Response.ContentLength = contentLength;
+
                 // Return 206 Partial Content
                 Response.StatusCode = 206;
                 return new FileStreamResult(partialContentStream, GetMimeNameFromExt(mediaInfo.FileExt))
@@ -92,13 +95,13 @@ namespace VideoStream.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error streaming media for newsId {NewsId}", newsid);
+                _logger.LogError(ex, "Error streaming media for Id {Id}", id);
                 return StatusCode(500, "Internal server error");
             }
         }
 
-        [HttpOptions("{newsid}")]
-        public IActionResult Options(string newsid)
+        [HttpOptions("{id}")]
+        public IActionResult Options(string id)
         {
             Response.Headers["Allow"] = "GET, HEAD, OPTIONS";
             Response.Headers["Access-Control-Allow-Origin"] = "*";

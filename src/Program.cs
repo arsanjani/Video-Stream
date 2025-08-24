@@ -9,7 +9,7 @@ builder.Services.AddControllers();
 // Configure memory cache
 builder.Services.AddMemoryCache(options =>
 {
-    options.SizeLimit = builder.Configuration.GetValue<long>("Caching:SizeLimit", 1024);
+    //options.SizeLimit = builder.Configuration.GetValue<long>("Caching:SizeLimit", 1024);
     options.CompactionPercentage = builder.Configuration.GetValue<double>("Caching:CompactionPercentage", 0.25);
 });
 

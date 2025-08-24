@@ -42,11 +42,13 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 
     private void SetupMockMediaStreamService(Mock<IMediaStreamService> mockService)
     {
-        // Setup for valid news ID
-        mockService.Setup(s => s.IsValidNewsId("123")).Returns(true);
-        mockService.Setup(s => s.IsValidNewsId("456")).Returns(true);
-        mockService.Setup(s => s.IsValidNewsId("789")).Returns(true);
-        mockService.Setup(s => s.IsValidNewsId("invalid")).Returns(false);
+        // Setup for valid ID
+        mockService.Setup(s => s.IsValidId("123")).Returns(true);
+        mockService.Setup(s => s.IsValidId("456")).Returns(true);
+        mockService.Setup(s => s.IsValidId("789")).Returns(true);
+        mockService.Setup(s => s.IsValidId("video_123")).Returns(true);
+        mockService.Setup(s => s.IsValidId("media-file")).Returns(true);
+        mockService.Setup(s => s.IsValidId("invalid@id")).Returns(false);
 
         // Setup media stream info
         var mediaInfo = new MediaStreamInfo
@@ -71,7 +73,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         // Setup stream creation
         var testData = Enumerable.Range(0, 1024).Select(i => (byte)(i % 256)).ToArray();
         mockService.Setup(s => s.CreatePartialContentAsync("123", It.IsAny<long>(), It.IsAny<long>()))
-            .ReturnsAsync((string newsId, long start, long end) =>
+            .ReturnsAsync((string id, long start, long end) =>
             {
                 var length = (int)(end - start + 1);
                 var data = testData.Skip((int)start).Take(length).ToArray();
@@ -80,7 +82,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithInvalidNewsId_Returns404()
+    public async Task Get_WithInvalidId_Returns404()
     {
         // Act
         var response = await _client.GetAsync("/api/stream/invalid");
@@ -90,7 +92,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithValidNewsIdButNoMedia_Returns404()
+    public async Task Get_WithValidIdButNoMedia_Returns404()
     {
         // Act
         var response = await _client.GetAsync("/api/stream/456");
@@ -110,7 +112,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithValidNewsId_Returns200WithCorrectHeaders()
+    public async Task Get_WithValidId_Returns200WithCorrectHeaders()
     {
         // Act
         var response = await _client.GetAsync("/api/stream/123");
@@ -123,7 +125,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithValidNewsId_ReturnsCorrectContent()
+    public async Task Get_WithValidId_ReturnsCorrectContent()
     {
         // Act
         var response = await _client.GetAsync("/api/stream/123");
@@ -294,10 +296,10 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithLongNewsId_ProcessesCorrectly()
+    public async Task Get_WithLongId_ProcessesCorrectly()
     {
         // Arrange
-        var longNewsId = "1234567890123456789";
+        var longId = "1234567890123456789";
         
         // Create a new factory with additional mock setup
         var factory = _factory.WithWebHostBuilder(builder =>
@@ -313,16 +315,16 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
                 var mockService = new Mock<IMediaStreamService>();
                 SetupMockMediaStreamService(mockService);
                 
-                // Add specific setup for long news ID
-                mockService.Setup(s => s.IsValidNewsId(longNewsId)).Returns(true);
-                mockService.Setup(s => s.GetMediaStreamInfoAsync(longNewsId)).ReturnsAsync(new MediaStreamInfo
+                // Add specific setup for long ID
+                mockService.Setup(s => s.IsValidId(longId)).Returns(true);
+                mockService.Setup(s => s.GetMediaStreamInfoAsync(longId)).ReturnsAsync(new MediaStreamInfo
                 {
-                    Id = longNewsId,
+                    Id = longId,
                     FileSize = 512,
                     FileType = "video/mp4",
                     FileExt = ".mp4"
                 });
-                mockService.Setup(s => s.CreatePartialContentAsync(longNewsId, 0, 511))
+                mockService.Setup(s => s.CreatePartialContentAsync(longId, 0, 511))
                     .ReturnsAsync(new MemoryStream(new byte[512]));
 
                 services.AddSingleton(mockService.Object);
@@ -332,7 +334,7 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         var client = factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync($"/api/stream/{longNewsId}");
+        var response = await client.GetAsync($"/api/stream/{longId}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -373,19 +375,65 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Get_WithSpecialCharactersInNewsId_HandlesCorrectly()
+    public async Task Get_WithSpecialCharactersInId_HandlesCorrectly()
     {
         // Arrange
-        var specialNewsId = "123-456_789";
+        var specialId = "123@invalid";
         
-        // The special characters should be invalid according to the IsValidNewsId logic
-        // which only allows numeric strings, so this should return 404
+        // The special characters should be invalid according to the IsValidId logic
+        // which only allows alphanumeric, hyphens, and underscores
 
         // Act
-        var response = await _client.GetAsync($"/api/stream/{specialNewsId}");
+        var response = await _client.GetAsync($"/api/stream/{specialId}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Get_WithValidStringId_Returns200()
+    {
+        // Arrange
+        var stringId = "video_123";
+        
+        // Create a new factory with additional mock setup for string ID
+        var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(IMediaStreamService));
+                if (descriptor != null)
+                {
+                    services.Remove(descriptor);
+                }
+
+                var mockService = new Mock<IMediaStreamService>();
+                SetupMockMediaStreamService(mockService);
+                
+                // Add specific setup for string ID
+                mockService.Setup(s => s.IsValidId(stringId)).Returns(true);
+                mockService.Setup(s => s.GetMediaStreamInfoAsync(stringId)).ReturnsAsync(new MediaStreamInfo
+                {
+                    Id = stringId,
+                    FileSize = 1024,
+                    FileType = "video/mp4",
+                    FileExt = ".mp4"
+                });
+                mockService.Setup(s => s.CreatePartialContentAsync(stringId, 0, 1023))
+                    .ReturnsAsync(new MemoryStream(new byte[1024]));
+
+                services.AddSingleton(mockService.Object);
+            });
+        });
+
+        var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync($"/api/stream/{stringId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be(1024);
     }
 
     [Fact]

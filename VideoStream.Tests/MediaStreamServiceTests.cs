@@ -95,13 +95,29 @@ public class MediaStreamServiceTests
     }
 
     [Fact]
-    public void IsValidNewsId_WithValidNumericId_ReturnsTrue()
+    public void IsValidId_WithValidNumericId_ReturnsTrue()
     {
         // Arrange
         var validId = "12345";
 
         // Act
-        var result = _mediaStreamService.IsValidNewsId(validId);
+        var result = _mediaStreamService.IsValidId(validId);
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("abc123")]
+    [InlineData("user_123")]
+    [InlineData("video-id")]
+    [InlineData("ABC")]
+    [InlineData("test_video_123")]
+    [InlineData("media-file-456")]
+    public void IsValidId_WithValidStringId_ReturnsTrue(string validId)
+    {
+        // Act
+        var result = _mediaStreamService.IsValidId(validId);
 
         // Assert
         result.Should().BeTrue();
@@ -110,24 +126,22 @@ public class MediaStreamServiceTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("abc")]
-    [InlineData("12.34")]
-    [InlineData("12a34")]
-    [InlineData("-123")]
-    public void IsValidNewsId_WithInvalidId_ReturnsFalse(string invalidId)
+    [InlineData("id/path")]
+    [InlineData("id\\path")]
+    public void IsValidId_WithInvalidId_ReturnsFalse(string invalidId)
     {
         // Act
-        var result = _mediaStreamService.IsValidNewsId(invalidId);
+        var result = _mediaStreamService.IsValidId(invalidId);
 
         // Assert
         result.Should().BeFalse();
     }
 
     [Fact]
-    public void IsValidNewsId_WithNull_ReturnsFalse()
+    public void IsValidId_WithNull_ReturnsFalse()
     {
         // Act
-        var result = _mediaStreamService.IsValidNewsId(null!);
+        var result = _mediaStreamService.IsValidId(null!);
 
         // Assert
         result.Should().BeFalse();
@@ -137,17 +151,24 @@ public class MediaStreamServiceTests
     [InlineData("0")]
     [InlineData("1")]
     [InlineData("999999999999999")]
-    public void IsValidNewsId_WithValidEdgeCases_ReturnsTrue(string validId)
+    [InlineData("a")]
+    [InlineData("Z")]
+    [InlineData("a1")]
+    [InlineData("1a")]
+    [InlineData("a_b")]
+    [InlineData("a-b")]
+    [InlineData("very_long_but_valid_id_name_12345")]
+    public void IsValidId_WithValidEdgeCases_ReturnsTrue(string validId)
     {
         // Act
-        var result = _mediaStreamService.IsValidNewsId(validId);
+        var result = _mediaStreamService.IsValidId(validId);
 
         // Assert
         result.Should().BeTrue();
     }
 
     [Fact]
-    public async Task GetMediaStreamInfoAsync_WithInvalidNewsId_ReturnsNull()
+    public async Task GetMediaStreamInfoAsync_WithInvalidId_ReturnsNull()
     {
         // Arrange
         var invalidId = "invalid";
@@ -160,7 +181,7 @@ public class MediaStreamServiceTests
     }
 
     [Fact]
-    public async Task CreatePartialContentAsync_WithInvalidNewsId_ThrowsFileNotFoundException()
+    public async Task CreatePartialContentAsync_WithInvalidId_ThrowsFileNotFoundException()
     {
         // Arrange
         var invalidId = "invalid";
@@ -203,54 +224,116 @@ public class MediaStreamServiceTests
     }
 
     [Fact]
-    public void IsValidNewsId_WithMaxLongValue_ReturnsTrue()
+    public void IsValidId_WithMaxLengthId_ReturnsTrue()
     {
-        // Arrange
-        var maxLongValue = long.MaxValue.ToString();
+        // Arrange - Create a 50-character ID (maximum allowed length)
+        var maxLengthId = new string('a', 50);
 
         // Act
-        var result = _mediaStreamService.IsValidNewsId(maxLongValue);
+        var result = _mediaStreamService.IsValidId(maxLengthId);
 
         // Assert
         result.Should().BeTrue();
     }
 
     [Fact]
-    public void IsValidNewsId_WithLeadingZeros_ReturnsTrue()
+    public void IsValidId_WithTooLongId_ReturnsFalse()
     {
-        // Arrange
-        var idWithLeadingZeros = "00123";
+        // Arrange - Create a 51-character ID (exceeds maximum allowed length)
+        var tooLongId = new string('a', 51);
 
         // Act
-        var result = _mediaStreamService.IsValidNewsId(idWithLeadingZeros);
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Theory]
-    [InlineData("123 ")]
-    [InlineData(" 123")]
-    [InlineData("1 2 3")]
-    public void IsValidNewsId_WithWhitespace_ReturnsFalse(string idWithWhitespace)
-    {
-        // Act
-        var result = _mediaStreamService.IsValidNewsId(idWithWhitespace);
+        var result = _mediaStreamService.IsValidId(tooLongId);
 
         // Assert
         result.Should().BeFalse();
     }
 
     [Fact]
-    public void IsValidNewsId_WithSpecialCharacters_ReturnsFalse()
+    public void IsValidId_WithLeadingZeros_ReturnsTrue()
     {
         // Arrange
-        var idWithSpecialChars = "123!@#";
+        var idWithLeadingZeros = "00123";
 
         // Act
-        var result = _mediaStreamService.IsValidNewsId(idWithSpecialChars);
+        var result = _mediaStreamService.IsValidId(idWithLeadingZeros);
 
         // Assert
+        result.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("\tid")]
+    [InlineData("id\n")]
+    public void IsValidId_WithWhitespace_ReturnsFalse(string idWithWhitespace)
+    {
+        // Act
+        var result = _mediaStreamService.IsValidId(idWithWhitespace);
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Theory]
+    // Characters invalid for Windows file names must be rejected
+    [InlineData("id*asterisk")]
+    [InlineData("id?question")]
+    [InlineData("id|pipe")]
+    [InlineData("id<greater>")]
+    [InlineData("id>less")]
+    [InlineData("id\"quote")]
+    [InlineData("id:colon")]
+    [InlineData("id\\backslash")]
+    [InlineData("id/slash")]
+    public void IsValidId_WithInvalidWindowsChars_ReturnsFalse(string idWithSpecialChars)
+    {
+        // Act
+        var result = _mediaStreamService.IsValidId(idWithSpecialChars);
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Theory]
+    // These special characters are allowed in Windows file names and should be accepted
+    [InlineData("123!@#")]
+    [InlineData("id@domain.com")]
+    [InlineData("id.extension")]
+    [InlineData("id+plus")]
+    [InlineData("id=equals")]
+    [InlineData("id%percent")]
+    [InlineData("id&ampersand")]
+    [InlineData("id(parenthesis)")]
+    [InlineData("id[bracket]")]
+    [InlineData("id{brace}")]
+    [InlineData("id;semicolon")]
+    public void IsValidId_WithAllowedSpecialCharacters_ReturnsTrue(string idWithSpecialChars)
+    {
+        // Act
+        var result = _mediaStreamService.IsValidId(idWithSpecialChars);
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("CON")]
+    [InlineData("con.txt")]
+    [InlineData("LPT1")]
+    [InlineData("nul")]
+    public void IsValidId_WithReservedDeviceNames_ReturnsFalse(string reservedName)
+    {
+        // Act
+        var result = _mediaStreamService.IsValidId(reservedName);
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsValidId_WithTrailingDot_ReturnsFalse()
+    {
+        var result = _mediaStreamService.IsValidId("name.");
         result.Should().BeFalse();
     }
 } 
