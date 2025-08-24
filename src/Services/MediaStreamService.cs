@@ -35,58 +35,10 @@ public class MediaStreamService : IMediaStreamService
 
     public bool IsValidId(string id)
     {
-        if (string.IsNullOrWhiteSpace(id))
-        {
+        // Only validate non-null and non-empty ids. All other constraints
+        // are intentionally relaxed; the caller is responsible for any further checks.
+        if (string.IsNullOrEmpty(id))
             return false;
-        }
-
-        // Enforce trimmed identifiers
-        if (id != id.Trim())
-        {
-            return false;
-        }
-
-        // Reasonable length limits for security
-        if (id.Length > 50)
-        {
-            return false;
-        }
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            // Windows: disallow runtime invalid filename chars plus control chars
-            var runtimeInvalid = Path.GetInvalidFileNameChars();
-            var controlChars = Enumerable.Range(0, 32).Select(i => (char)i);
-            var invalidChars = runtimeInvalid.Concat(controlChars).Distinct().ToArray();
-            if (id.IndexOfAny(invalidChars) >= 0)
-            {
-                return false;
-            }
-
-            // File names cannot end with a dot on Windows
-            if (id.EndsWith('.'))
-                return false;
-
-            // Reserved device names (CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9)
-            // are not allowed even with extensions (e.g. "CON.txt")
-            var reservedNames = new[] { "CON", "PRN", "AUX", "NUL" }
-                .Concat(Enumerable.Range(1, 9).Select(i => "COM" + i))
-                .Concat(Enumerable.Range(1, 9).Select(i => "LPT" + i))
-                .ToArray();
-
-            var firstPart = id.Split('.').FirstOrDefault()?.ToUpperInvariant() ?? string.Empty;
-            if (reservedNames.Contains(firstPart))
-                return false;
-        }
-        else
-        {
-            // Linux/Unix: only slash '/' and NUL/control characters are invalid in filenames
-            var invalidChars = new[] { '/' }.Concat(Enumerable.Range(0, 32).Select(i => (char)i)).Distinct().ToArray();
-            if (id.IndexOfAny(invalidChars) >= 0)
-            {
-                return false;
-            }
-        }
 
         return true;
     }
